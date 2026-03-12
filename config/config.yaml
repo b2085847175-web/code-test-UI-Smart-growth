@@ -1,0 +1,53 @@
+# Web UI 自动化测试配置文件
+# 支持多环境配置
+
+# 测试环境配置
+env:
+  # 默认使用的环境
+  default: "dev"
+
+  # 开发环境配置
+  dev:
+    base_url: "https://dev.aigrowth8.com"
+    username: "18821371697"
+    password: "Ww12345678.."
+
+  # 测试环境配置
+  test:
+    base_url: "https://example-test.com"
+    username: "test_user"
+    password: "test123456"
+
+  # 生产环境配置
+  prod:
+    base_url: "https://example.com"
+    username: "prod_user"
+    password: "prod123456"
+
+# 浏览器配置
+browser:
+  # 浏览器类型：chromium, firefox, webkit
+  type: "chromium"
+  # 是否无头模式
+  headless: false
+  # 浏览器窗口大小
+  viewport:
+    width: 1920
+    height: 1080
+  # 超时时间（毫秒）
+  timeout: 30000
+  # 慢速操作（毫秒，用于调试）
+  slow_mo: 0
+
+# 测试配置
+test:
+  # 重试次数
+  retries: 2
+  # 并行线程数（已设为1，避免多浏览器混乱）
+  workers: 1
+  # 报告输出目录
+  report_dir: "reports"
+  # 截图输出目录
+  screenshot_dir: "screenshots"
+  # 视频输出目录
+  video_dir: "videos"
