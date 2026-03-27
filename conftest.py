@@ -2,8 +2,11 @@
 Pytest 配置文件
 包含全局 fixture 和钩子函数
 """
+import re
+import traceback
+
 import pytest
-from playwright.sync_api import sync_playwright, Browser, Page, BrowserContext
+from playwright.sync_api import sync_playwright, expect
 from utils.helpers import config_loader
 import allure
 
@@ -18,8 +21,26 @@ def playwright():
         yield p
 
 
+def pytest_addoption(parser):
+    """
+    添加自定义命令行参数
+    """
+    parser.addoption(
+        "--env",
+        action="store",
+        default=None,
+        help="运行环境: dev/test/prod"
+    )
+    parser.addoption(
+        "--headless",
+        action="store",
+        default=None,
+        help="覆盖配置中的浏览器无头模式: true/false"
+    )
+
+
 @pytest.fixture(scope="function")
-def browser(playwright):
+def browser(playwright, request):
     """
     浏览器 fixture
     作用域：每个测试函数
@@ -27,7 +48,11 @@ def browser(playwright):
     """
     browser_config = config_loader.get_browser_config()
     browser_type = browser_config["type"]
-    headless = browser_config["headless"]
+    headless_option = request.config.getoption("--headless")
+    if headless_option is None:
+        headless = browser_config["headless"]
+    else:
+        headless = str(headless_option).strip().lower() == "true"
     slow_mo = browser_config["slow_mo"]
 
     # 启动浏览器
@@ -68,7 +93,7 @@ def context(browser):
     # 创建新的浏览器上下文
     context = browser.new_context(
         viewport=viewport,
-        ignore_https_errors=True
+        ignore_https_errors=browser_config.get("ignore_https_errors", False)
     )
 
     yield context
@@ -98,12 +123,28 @@ def page(context):
 
 
 @pytest.fixture(scope="session")
-def env_config():
+def env_config(request):
     """
     环境配置 fixture
     作用域：整个测试会话
     """
-    return config_loader.get_env_config()
+    env = request.config.getoption("--env")
+    return config_loader.get_env_config(env)
+
+
+@pytest.fixture(scope="function")
+def logged_in_page(page, env_config):
+    """
+    已登录页面 fixture
+    作用域：每个测试函数
+    """
+    from pages.login_page import LoginPage
+
+    login_page = LoginPage(page)
+    login_page.navigate(env_config["base_url"])
+    login_page.login(env_config["username"], env_config["password"])
+    expect(page).not_to_have_url(re.compile(r".*/login.*"), timeout=15000)
+    return page
 
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
@@ -128,4 +169,8 @@ def pytest_runtest_makereport(item, call):
                 attachment_type=allure.attachment_type.PNG
             )
         except Exception:
-            pass
+            allure.attach(
+                traceback.format_exc(),
+                name="截图失败堆栈",
+                attachment_type=allure.attachment_type.TEXT
+            )

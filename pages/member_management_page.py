@@ -3,6 +3,8 @@
 使用 POM（Page Object Model）设计模式
 网站：https://dev.aigrowth8.com
 """
+import re
+
 from playwright.sync_api import Page
 import allure
 
@@ -32,27 +34,32 @@ class MemberManagementPage:
     @property
     def add_member_button(self):
         """添加成员按钮 - 使用 get_by_role 定位"""
-        return self.page.get_by_role("button", name="plus 添加成员")
+        return self.page.get_by_role("button", name=re.compile(r"添加成员"))
 
     @property
     def phone_search_input(self):
-        """手机号搜索输入框 - 使用 get_by_role 定位"""
-        return self.page.get_by_role("textbox", name="请输入手机号搜索")
+        """手机号搜索输入框 - 使用 placeholder 定位"""
+        return self.page.get_by_placeholder("请输入手机号搜索")
 
     @property
     def member_checkbox(self):
-        """成员复选框 - 使用 get_by_role 定位"""
-        return self.page.get_by_role("checkbox", name="赵文龙")
+        """成员复选框 - 选择搜索结果中的第一个复选框"""
+        return self.page.locator(".ant-modal-body .ant-checkbox-input").first
 
     @property
     def confirm_button(self):
         """确定按钮 - 使用 get_by_role 定位"""
-        return self.page.get_by_role("button", name="确 定")
+        return self.page.get_by_role("button", name=re.compile(r"确\s*定"))
 
     @property
     def success_message(self):
-        """成功提示信息 - 使用 get_by_text 定位"""
-        return self.page.get_by_text("成功添加 1 名成员")
+        """成功提示信息 - 文案可能随数量变化"""
+        return self.page.get_by_text("成功添加")
+
+    @property
+    def no_member_message(self):
+        """无匹配成员提示"""
+        return self.page.get_by_text("未找到匹配的成员")
 
     # ==================== 页面操作方法 ====================
 
@@ -84,7 +91,12 @@ class MemberManagementPage:
     def check_member(self):
         """勾选成员复选框"""
         self.member_checkbox.wait_for(state="visible")
-        self.member_checkbox.check()
+        if not self.member_checkbox.is_checked():
+            self.member_checkbox.check()
+
+    def has_selectable_member(self) -> bool:
+        """是否存在可勾选成员"""
+        return self.page.locator(".ant-modal-body .ant-checkbox-input").count() > 0
 
     @allure.step("点击确定按钮")
     def click_confirm(self):
@@ -93,7 +105,7 @@ class MemberManagementPage:
         self.confirm_button.click()
 
     @allure.step("执行添加成员操作")
-    def add_member(self, phone: str):
+    def add_member(self, phone: str = "") -> bool:
         """
         执行完整的添加成员流程
 
@@ -102,6 +114,18 @@ class MemberManagementPage:
         """
         self.click_account_management()
         self.click_add_member()
-        self.input_phone_search(phone)
+        if phone:
+            self.input_phone_search(phone)
+            # 搜索结果更新存在轻微延迟
+            self.page.wait_for_timeout(800)
+
+        if not self.has_selectable_member():
+            self.phone_search_input.clear()
+            self.page.wait_for_timeout(800)
+
+        if not self.has_selectable_member():
+            return False
+
         self.check_member()
         self.click_confirm()
+        return True

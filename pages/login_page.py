@@ -4,6 +4,7 @@
 网站：https://dev.aigrowth8.com/login
 """
 from playwright.sync_api import Page
+from playwright.sync_api import expect
 import allure
 
 
@@ -41,8 +42,10 @@ class LoginPage:
 
     @property
     def error_message(self):
-        """错误提示信息 - 使用 CSS 定位（Element UI 消息组件）"""
-        return self.page.locator(".ant-message-error")
+        """错误提示信息 - 兼容弹窗提示和表单错误提示"""
+        return self.page.locator(
+            ".ant-message-error, .ant-form-item-explain-error"
+        )
 
     # ==================== 页面操作方法 ====================
 
@@ -55,8 +58,8 @@ class LoginPage:
             base_url: 网站基础 URL
         """
         login_url = f"{base_url}/login"
-        self.page.goto(login_url)
-        self.page.wait_for_load_state("networkidle")
+        self.page.goto(login_url, wait_until="domcontentloaded")
+        self.phone_input.wait_for(state="visible")
 
     @allure.step("输入手机号码：{phone}")
     def input_phone(self, phone: str):
@@ -85,9 +88,9 @@ class LoginPage:
         self.password_input.fill(password)
 
     @allure.step("点击登录按钮")
-    def click_login_button(self):
+    def click_login_button(self, force: bool = False):
         """点击登录按钮"""
-        self.login_button.click()
+        self.login_button.click(force=force)
 
     @allure.step("执行登录操作")
     def login(self, phone: str, password: str):
@@ -101,3 +104,19 @@ class LoginPage:
         self.input_phone(phone)
         self.input_password(password)
         self.click_login_button()
+
+    @allure.step("验证登录页面加载完成")
+    def verify_login_page_loaded(self):
+        """验证登录页关键元素可见"""
+        expect(self.phone_input).to_be_visible()
+        expect(self.password_input).to_be_visible()
+        expect(self.login_button).to_be_visible()
+
+    @allure.step("验证是否显示错误信息")
+    def is_error_message_displayed(self, timeout: int = 5000) -> bool:
+        """检查是否出现错误提示"""
+        try:
+            expect(self.error_message.first).to_be_visible(timeout=timeout)
+            return True
+        except AssertionError:
+            return False
