@@ -122,6 +122,16 @@ class OrganizationWorkOrderPage:
             ".ant-select-dropdown:not(.ant-select-dropdown-hidden)"
         ).last
 
+    def _select_trigger_by_placeholder(self, placeholder_text: str) -> Locator:
+        placeholder = self.work_order_form.locator(
+            ".ant-select-selection-placeholder"
+        ).filter(
+            has_text=re.compile(rf"^{re.escape(placeholder_text)}$")
+        ).first
+        return placeholder.locator(
+            "xpath=ancestor::div[contains(@class, 'ant-select-selector')]"
+        ).first
+
     def _select_dropdown_option(
         self,
         trigger: Locator,
@@ -137,10 +147,12 @@ class OrganizationWorkOrderPage:
 
         option = dropdown.get_by_title(option_text).first
         try:
-            option.wait_for(state="visible", timeout=1500)
-            option.click()
+            option.wait_for(state="visible", timeout=3000)
         except PlaywrightTimeoutError:
-            dropdown.get_by_text(option_text, exact=True).last.click()
+            option = dropdown.get_by_text(option_text, exact=True).first
+            option.wait_for(state="visible", timeout=timeout)
+
+        option.click()
 
         self.wait_for_ui_stable(timeout=timeout)
 
@@ -192,79 +204,47 @@ class OrganizationWorkOrderPage:
 
     @property
     def proxy_creator_selector(self) -> Locator:
-        return self.work_order_form.locator("div").filter(
-            has_text=re.compile(r"^请输入姓名搜索代为创建人$")
-        ).first
+        return self.work_order_form.get_by_label("代为创建人").first
 
     @property
     def ecommerce_platform_selector(self) -> Locator:
-        return self.work_order_form.get_by_role(
-            "combobox",
-            name=re.compile(r"^\*?\s*电商平台$")
-        )
+        return self._select_trigger_by_placeholder("请选择电商平台")
 
     @property
     def store_selector(self) -> Locator:
-        return self.work_order_form.get_by_role(
-            "combobox",
-            name=re.compile(r"^\*?\s*店铺$")
-        )
+        return self.work_order_form.get_by_label("店铺").first
 
     @property
     def product_id_input(self) -> Locator:
-        return self.work_order_form.get_by_role(
-            "textbox",
-            name=re.compile(r"^\*?\s*商品ID$")
-        )
+        return self.work_order_form.get_by_placeholder("请输入商品ID")
 
     @property
     def product_link_input(self) -> Locator:
-        return self.work_order_form.get_by_role(
-            "textbox",
-            name=re.compile(r"^\*?\s*商品链接$")
-        )
+        return self.work_order_form.get_by_placeholder("请输入商品链接")
 
     @property
     def product_title_input(self) -> Locator:
-        return self.work_order_form.get_by_role(
-            "textbox",
-            name=re.compile(r"^\*?\s*商品标题$")
-        )
+        return self.work_order_form.get_by_placeholder("请输入商品标题")
 
     @property
     def product_name_input(self) -> Locator:
-        return self.work_order_form.get_by_role(
-            "textbox",
-            name=re.compile(r"^\*?\s*商品名称$")
-        )
+        return self.work_order_form.get_by_placeholder("请输入商品名称")
 
     @property
     def delivery_code_input(self) -> Locator:
-        return self.work_order_form.get_by_role(
-            "textbox",
-            name=re.compile(r"^\*?\s*发货编码$")
-        )
+        return self.work_order_form.get_by_placeholder("请输入发货编码")
 
     @property
     def group_maintenance_selector(self) -> Locator:
-        return self.work_order_form.get_by_role(
-            "combobox",
-            name=re.compile(r"^\*?\s*开群维护$")
-        )
+        return self.work_order_form.get_by_label("开群维护").first
 
     @property
     def completion_days_input(self) -> Locator:
-        return self.work_order_form.get_by_role(
-            "textbox",
-            name=re.compile(r"^\*?\s*完成天数$")
-        )
+        return self.work_order_form.get_by_placeholder("请输入完成天数")
 
     @property
     def review_required_selector(self) -> Locator:
-        return self.work_order_form.get_by_role(
-            "combobox",
-            name=re.compile(r"^\*?\s*是否评价$")
-        )
+        return self.work_order_form.get_by_label("是否评价").first
 
     @property
     def file_input(self) -> Locator:
@@ -367,11 +347,12 @@ class OrganizationWorkOrderPage:
     def select_proxy_creator(self, creator_name: str) -> None:
         self.proxy_creator_selector.wait_for(state="visible", timeout=10000)
         self.proxy_creator_selector.click()
-        self.page.get_by_title(creator_name).first.wait_for(
+        creator_option = self.page.get_by_title(creator_name).locator("div").first
+        creator_option.wait_for(
             state="visible",
             timeout=10000
         )
-        self.page.get_by_title(creator_name).first.click()
+        creator_option.click()
         self.wait_for_ui_stable()
 
     @allure.step("选择电商平台：{platform_name}")
