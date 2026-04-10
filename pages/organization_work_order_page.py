@@ -289,6 +289,27 @@ class OrganizationWorkOrderPage:
     def image_preview_close_button(self) -> Locator:
         return self.page.locator(".ant-image-preview-close, .ant-modal-close").first
 
+    @property
+    def work_order_search_input(self) -> Locator:
+        return self.page.get_by_placeholder("请输入工单号、工单标题、商品ID")
+
+    @property
+    def work_order_list_rows(self) -> Locator:
+        return self.page.locator(
+            ".ant-table-tbody tr:not(.ant-table-measure-row)"
+        )
+
+    @property
+    def transfer_buttons(self) -> Locator:
+        return self.page.get_by_role(
+            "button",
+            name=re.compile(r"(swap\s*)?流转")
+        )
+
+    @property
+    def transfer_remark_input(self) -> Locator:
+        return self.page.get_by_placeholder("请输入流转备注")
+
     # ==================== 业务动作 ====================
 
     def organization_entry(self, organization_name: str) -> Locator:
@@ -459,6 +480,7 @@ class OrganizationWorkOrderPage:
     @allure.step("点击保存工单")
     def click_save(self) -> None:
         self._click_and_wait(self.save_button)
+        self.page.wait_for_timeout(1000)
 
     @allure.step("确认保存工单")
     def confirm_save(self) -> None:
@@ -470,6 +492,7 @@ class OrganizationWorkOrderPage:
         # 先等待保存后的“确定”按钮真正出现。
         print("[confirm_save] 开始等待最后一个“确定”按钮出现")
         self.confirm_button.wait_for(state="visible", timeout=10000)
+        self.page.wait_for_timeout(1000)
 
         # 再点击最后出现的那个“确定”按钮，避免点到页面里原本就有的按钮。
         print("[confirm_save] 已找到最后一个“确定”按钮，准备点击")
@@ -479,6 +502,92 @@ class OrganizationWorkOrderPage:
         # 点击后统一等待页面稳定，方便后续继续观察结果。
         self.wait_for_ui_stable()
         print("[confirm_save] 点击后页面稳定等待完成")
+
+    def work_order_row(self, keyword: str) -> Locator:
+        return self.work_order_list_rows.filter(has_text=keyword).first
+
+    @allure.step("按关键字搜索工单：{keyword}")
+    def search_work_order(self, keyword: str) -> None:
+        self._fill_input(self.work_order_search_input, keyword, timeout=15000)
+        self.work_order_search_input.press("Enter")
+        self.wait_for_ui_stable(timeout=15000)
+        self.page.wait_for_timeout(800)
+
+    @allure.step("打开目标工单的流转弹窗：{keyword}")
+    def open_transfer_dialog_for_work_order(
+        self,
+        keyword: str,
+        timeout: int = 15000
+    ) -> None:
+        target_row = self.work_order_row(keyword)
+
+        try:
+            target_row.wait_for(state="visible", timeout=timeout)
+            transfer_button = target_row.get_by_role(
+                "button",
+                name=re.compile(r"(swap\s*)?流转")
+            ).first
+            self._click_and_wait(transfer_button, timeout=timeout)
+        except PlaywrightTimeoutError:
+            self._click_first_visible(self.transfer_buttons, timeout=timeout)
+
+        expect(self.transfer_remark_input).to_be_visible(timeout=timeout)
+
+    @allure.step("选择流转团队：{team_name}")
+    def select_transfer_team(
+        self,
+        team_name: str,
+        timeout: int = 15000
+    ) -> None:
+        trigger = self.page.get_by_label("分配团队")
+        self._click_first_visible(trigger, timeout=timeout)
+
+        dropdown = self._get_visible_dropdown()
+        dropdown.wait_for(state="visible", timeout=timeout)
+
+        option = dropdown.get_by_title(team_name).first
+        try:
+            option.wait_for(state="visible", timeout=3000)
+        except PlaywrightTimeoutError:
+            option = dropdown.get_by_text(team_name, exact=True).first
+            option.wait_for(state="visible", timeout=timeout)
+
+        option.click()
+        self.wait_for_ui_stable(timeout=timeout)
+
+    @allure.step("填写流转备注：{remark}")
+    def fill_transfer_remark(self, remark: str) -> None:
+        self._fill_input(self.transfer_remark_input, remark, timeout=10000)
+
+    @allure.step("确认工单流转")
+    def confirm_transfer(self, timeout: int = 15000) -> None:
+        dialog = self.page.locator(
+            ".ant-modal-content:visible, .ant-drawer-content:visible"
+        ).last
+        dialog.wait_for(state="visible", timeout=timeout)
+
+        confirm_button = dialog.locator("button.ant-btn-primary").last
+        confirm_button.wait_for(state="visible", timeout=timeout)
+        confirm_button.click(force=True)
+
+        self.wait_for_ui_stable(timeout=timeout)
+
+    @allure.step("搜索并将工单流转到团队")
+    def transfer_work_order_to_team(
+        self,
+        keyword: str,
+        team_name: str,
+        remark: str
+    ) -> None:
+        # 1. 先按本次工单关键字搜索，确保定位到刚创建的那一条工单。
+        self.search_work_order(keyword)
+        # 2. 打开该工单的流转弹窗。
+        self.open_transfer_dialog_for_work_order(keyword)
+        # 3. 在弹窗中选择目标团队并填写流转备注。
+        self.select_transfer_team(team_name)
+        self.fill_transfer_remark(remark)
+        # 4. 提交流转，完成从组织工单到团队工单的流转。
+        self.confirm_transfer()
 
     @allure.step("从组织下的我的工单中发起创建")
     def open_create_work_order(
@@ -528,15 +637,19 @@ class OrganizationWorkOrderPage:
         data: OrganizationWorkOrderCreateData,
         preview_image: bool = False
     ) -> None:
+        # 1. 进入组织下的“我的工单”，发起新建工单。
         self.open_create_work_order(
             organization_name=data.organization_name,
             work_order_type=data.work_order_type,
         )
+        # 2. 按业务字段填写工单表单。
         self.fill_work_order_form(data)
 
         if preview_image and data.image_path:
+            # 3. 如果有图片，补一次预览动作，确保上传后的页面状态正常。
             self.preview_first_image()
             self.close_image_preview()
 
+        # 4. 保存工单，并确认保存弹窗。
         self.click_save()
         self.confirm_save()
